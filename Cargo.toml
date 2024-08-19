@@ -1,5 +1,5 @@
 [package]
-name = "Generic-Ring-Buffer-Data-Structures"
+name = "generic_ringbuffers"
 version = "0.1.0"
 edition = "2021"
 

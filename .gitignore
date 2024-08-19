@@ -1,2 +1,2 @@
 /target
-Cargo.lock
+# Dont ignore Cargo.lock for libraries

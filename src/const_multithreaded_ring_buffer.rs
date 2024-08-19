@@ -1,16 +1,17 @@
 use std::fmt::Debug;
 use std::sync::{Condvar, Mutex};
 
-// Arc documentation for threading with mutex and condvar here:
-// Mutex: https://doc.rust-lang.org/stable/std/sync/struct.Mutex.html
-// Condvar: https://doc.rust-lang.org/stable/std/sync/struct.Condvar.html
-/// A ring (circular) buffer struct that can only be used in a multi-threaded environment
+/// A ring (circular) buffer struct that can only be used in a *multi-threaded environment*,
+/// using a stack-allocated [Array][https://doc.rust-lang.org/std/primitive.array.html] under the hood.
+/// See the [Wikipedia article](https://en.wikipedia.org/wiki/Circular_buffer) for more info.
+#[derive(Debug)]
 pub struct ConstMultiThreadedRingBuffer<T, const CAPACITY: usize> {
     num_jobs: (Mutex<usize>, Condvar),
     inner_rb: Mutex<InnerRingBuffer<T, CAPACITY>>,
 }
 
-// An inner ring buffer to contain the items, enqueue, and dequeue index for ConstMultiThreadedRingBuffer struct
+/// An inner ring buffer to contain the items, enqueue, and dequeue index for ConstMultiThreadedRingBuffer struct
+#[derive(Debug)]
 struct InnerRingBuffer<T, const CAPACITY: usize> {
     items: [Option<T>; CAPACITY],
     enqueue_index: usize,
@@ -18,7 +19,7 @@ struct InnerRingBuffer<T, const CAPACITY: usize> {
 }
 
 /// Implements the InnerRingBuffer functions
-impl<T: Debug, const CAPACITY: usize> InnerRingBuffer<T, CAPACITY> {
+impl<T, const CAPACITY: usize> InnerRingBuffer<T, CAPACITY> {
     /// Instantiates the InnerRingBuffer
     const fn new() -> Self {
         InnerRingBuffer {
@@ -30,9 +31,7 @@ impl<T: Debug, const CAPACITY: usize> InnerRingBuffer<T, CAPACITY> {
         }
     }
 }
-
-/// Implements the ConstMultiThreadedRingBuffer functions
-impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
+impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
     /// Instantiates the ConstMultiThreadedRingBuffer.
     ///
     /// Time Complexity: O(1), Space complexity: O(N)
@@ -43,7 +42,7 @@ impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> 
         }
     }
 
-    /// Helper function to add an Option item to the ConstMultiThreadedRingBuffer
+    /// Helper function to add an Option item to the RingBuffer
     /// This is necessary so that the ring buffer can be poisoned with None values
     ///
     /// Time Complexity: O(1) if not blocked (arbitrary time if it is),
@@ -73,7 +72,7 @@ impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> 
         cvar.notify_one();
     }
 
-    /// Adds an item of type T to the ConstMultiThreadedRingBuffer so long as there is space in the buffer
+    /// Adds an item of type T to the RingBuffer, *blocking* the thread until there is space to add the item.
     ///
     /// Time Complexity: O(1) if not blocked (arbitrary time if it is),
     /// Space complexity: O(1)
@@ -81,7 +80,7 @@ impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> 
         self.enqueue_item(Some(item)).await;
     }
 
-    /// Retrieves an item of type T from the ConstMultiThreadedRingBuffer if an item exists in the buffer
+    /// Retrieves an item of type T from the RingBuffer if an item exists in the buffer.
     ///
     /// Time Complexity: O(1) if not blocked (arbitrary time if it is),
     /// Space complexity: O(1)
@@ -114,7 +113,7 @@ impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> 
         item
     }
 
-    /// Poisons the ConstMultiThreadedRingBuffer with None values up to the capacity of the buffer
+    /// Poisons the RingBuffer, preventing any more items from being **enqueued**.
     ///
     /// Time Complexity: O(N) if not blocked (arbitrary time if it is),
     /// Space complexity: O(1)
@@ -124,12 +123,12 @@ impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> 
         }
     }
 
-    /// If the ConstMultiThreadedRingBuffer is poisoned via the poison()
-    /// call or is at capacity, this method will allow the ring buffer
-    /// to be used again and resets it to an empty state
+    /// If the RingBuffer is [poisoned][Self::poison] or is at capacity,
+    /// this method will allow the RingBuffer
+    /// to be used again and resets it to an empty state.
     ///
     /// Time Complexity: O(1), Space complexity: O(1)
-    pub async fn clear_poison(&self) {
+    pub fn clear_poison(&self) {
         let mut num_jobs = self.num_jobs.0.lock().unwrap();
         if *num_jobs == CAPACITY {
             *self.inner_rb.lock().unwrap() = InnerRingBuffer::new();
@@ -139,7 +138,9 @@ impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> 
         }
     }
 
-    /// Clears the ConstMultiThreadedRingBuffer back to an empty state
+    /// Clears the MultiThreadedRingBuffer back to an empty state.
+    /// 
+    /// To clear the RingBuffer *only* when it is *poisoned*, see [Self::clear_poison].
     ///
     /// Time Complexity: O(1), Space complexity: O(1)
     pub async fn clear(&self) {
@@ -149,7 +150,7 @@ impl<T: Debug, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> 
     }
 }
 
-impl<T: Debug, const CAPACITY: usize> Default for ConstMultiThreadedRingBuffer<T, CAPACITY> {
+impl<T, const CAPACITY: usize> Default for ConstMultiThreadedRingBuffer<T, CAPACITY> {
     fn default() -> Self {
         Self::new()
     }
