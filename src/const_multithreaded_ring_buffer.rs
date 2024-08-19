@@ -11,7 +11,7 @@ pub struct ConstMultiThreadedRingBuffer<T, const CAPACITY: usize> {
 }
 
 /// An inner ring buffer to contain the items, enqueue, and dequeue index for ConstMultiThreadedRingBuffer struct
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct InnerRingBuffer<T, const CAPACITY: usize> {
     items: [Option<T>; CAPACITY],
     enqueue_index: usize,
@@ -153,5 +153,14 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
 impl<T, const CAPACITY: usize> Default for ConstMultiThreadedRingBuffer<T, CAPACITY> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl <T: Clone, const CAPACITY: usize> Clone for ConstMultiThreadedRingBuffer<T, CAPACITY> {
+    fn clone(&self) -> Self {
+        Self {
+            num_jobs: (Mutex::new(*self.num_jobs.0.lock().unwrap()), Condvar::new()),
+            inner_rb: Mutex::new(self.inner_rb.lock().unwrap().clone())
+        }
     }
 }

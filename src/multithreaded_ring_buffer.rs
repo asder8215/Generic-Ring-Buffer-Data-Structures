@@ -12,7 +12,7 @@ pub struct MultiThreadedRingBuffer<T> {
 }
 
 // An inner ring buffer to contain the items, enqueue, and dequeue index for MultiThreadedRingBuffer struct
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default, Clone)]
 struct InnerRingBuffer<T> {
     items: Vec<Option<T>>,
     enqueue_index: usize,
@@ -39,7 +39,7 @@ impl<T: Debug> MultiThreadedRingBuffer<T> {
     ///
     /// Time Complexity: O(1), Space complexity: O(N)
     pub fn new(capacity: usize) -> Self {
-        MultiThreadedRingBuffer {
+        Self {
             num_jobs: (Mutex::new(0), Condvar::new()),
             capacity,
             inner_rb: Mutex::new(InnerRingBuffer::new(capacity)),
@@ -153,5 +153,15 @@ impl<T: Debug> MultiThreadedRingBuffer<T> {
         *num_jobs = 0;
         let mut inner = self.inner_rb.lock().unwrap();
         *inner = InnerRingBuffer::new(self.capacity);
+    }
+}
+
+impl <T: Clone> Clone for MultiThreadedRingBuffer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            num_jobs: (Mutex::new(*self.num_jobs.0.lock().unwrap()), Condvar::new()),
+            capacity: self.capacity,
+            inner_rb: Mutex::new(self.inner_rb.lock().unwrap().clone())
+        }
     }
 }
