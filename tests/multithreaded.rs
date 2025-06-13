@@ -5,7 +5,7 @@ use generic_ringbuffers::MultiThreadedRingBuffer;
 async fn test_counter() {
     const MAX_ITEMS: usize = 100;
     const MAX_THREADS: usize = 5;
-    let mtrb = Arc::new(MultiThreadedRingBuffer::new(MAX_ITEMS));
+    let mtrb: Arc<MultiThreadedRingBuffer<usize>> = Arc::new(MultiThreadedRingBuffer::new(MAX_ITEMS));
     let mut threads = Vec::with_capacity(MAX_THREADS.try_into().unwrap());
 
     for _ in 0..MAX_THREADS {
@@ -36,6 +36,6 @@ async fn test_counter() {
     while let Some(curr_thread) = threads.pop() {
         items_taken += curr_thread.await.unwrap();
     }
-
+    // mtrb.print_buffer().await;
     assert_eq!(200, items_taken);
 }
