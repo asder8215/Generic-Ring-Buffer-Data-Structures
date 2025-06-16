@@ -146,7 +146,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         }
     }
 
-    /// Clears the MultiThreadedRingBuffer back to an empty state.
+    /// Clears the ConstMultiThreadedRingBuffer back to an empty state.
     ///
     /// To clear the RingBuffer *only* when it is *poisoned*, see [Self::clear_poison].
     ///
@@ -159,7 +159,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         *self.inner_rb.lock().unwrap() = InnerRingBuffer::new();
     }
 
-    /// Checks whether the MultiThreadedRingBuffer is empty or not
+    /// Checks whether the ConstMultiThreadedRingBuffer is empty or not
     ///
     /// Time Complexity: O(1)
     ///
@@ -168,7 +168,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         return *self.num_jobs.0.lock().unwrap() == 0;
     }
 
-    /// Checks whether the MultiThreadedRingBuffer is full or not
+    /// Checks whether the ConstMultiThreadedRingBuffer is full or not
     ///
     /// Time Complexity: O(1)
     ///
@@ -177,7 +177,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         return *self.num_jobs.0.lock().unwrap() == CAPACITY;
     }
 
-    /// Checks the next enqueue index within the MultiThreadedRingBuffer
+    /// Checks the next enqueue index within the ConstMultiThreadedRingBuffer
     ///
     /// Time Complexity: O(1)
     ///
@@ -187,7 +187,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         inner.enqueue_index
     }
 
-    /// Checks the next dequeue index within the MultiThreadedRingBuffer
+    /// Checks the next dequeue index within the ConstMultiThreadedRingBuffer
     ///
     /// Time Complexity: O(1)
     ///
@@ -197,7 +197,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         inner.dequeue_index
     }
 
-    /// Returns a clone of the item within the MultiThreadedRingBuffer
+    /// Returns a clone of the item within the ConstMultiThreadedRingBuffer
     ///
     /// The T object inside the ring buffer *must* implement the Clone trait
     ///
@@ -215,7 +215,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         inner.items[index].clone()
     }
 
-    /// Returns a clone of the MultiThreadedRingBuffer in its current state
+    /// Returns a clone of the ConstMultiThreadedRingBuffer in its current state
     ///
     /// The T object inside the ring buffer *must* implement the Clone trait
     ///
@@ -233,7 +233,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         inner.items.clone()
     }
 
-    /// Print out the content inside the MultitThreadedRingBuffer
+    /// Print out the content inside the ConstMultiThreadedRingBuffer
     ///
     /// Time Complexity: O(N)
     ///

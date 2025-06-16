@@ -255,7 +255,7 @@ impl<T: Debug> MultiThreadedRingBuffer<T> {
         inner.items.clone()
     }
 
-    /// Print out the content inside the MultitThreadedRingBuffer
+    /// Print out the content inside the MultiThreadedRingBuffer
     ///
     /// Time Complexity: O(N)
     ///
