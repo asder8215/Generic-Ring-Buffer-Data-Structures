@@ -35,7 +35,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
     /// Instantiates the ConstMultiThreadedRingBuffer.
     ///
     /// Time Complexity: O(1)
-    /// 
+    ///
     /// Space Complexity: O(N)
     pub const fn new() -> Self {
         ConstMultiThreadedRingBuffer {
@@ -48,9 +48,9 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
     /// This is necessary so that the ring buffer can be poisoned with None values
     ///
     /// Time Complexity: O(1) if not blocked (arbitrary time if it is),
-    /// 
+    ///
     /// Space Complexity: O(1)
-    async fn enqueue_item(&self, item: Option<T>) {
+    fn enqueue_item(&self, item: Option<T>) {
         // Locks to read how many jobs are in the ring buffer
         let (num_jobs, cvar) = &self.num_jobs;
         let mut num_jobs = num_jobs.lock().unwrap();
@@ -78,18 +78,18 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
     /// Adds an item of type T to the RingBuffer, *blocking* the thread until there is space to add the item.
     ///
     /// Time Complexity: O(1) if not blocked (arbitrary time if it is),
-    /// 
+    ///
     /// Space Complexity: O(1)
-    pub async fn enqueue(&self, item: T) {
-        self.enqueue_item(Some(item)).await;
+    pub fn enqueue(&self, item: T) {
+        self.enqueue_item(Some(item));
     }
 
     /// Retrieves an item of type T from the RingBuffer if an item exists in the buffer.
     ///
-    /// Time Complexity: O(1) if not blocked (arbitrary time if it is),
-    /// 
+    /// Time Complexity: O(1) if not blocked (arbitrary time if it is)
+    ///
     /// Space Complexity: O(1)
-    pub async fn dequeue(&self) -> Option<T> {
+    pub fn dequeue(&self) -> Option<T> {
         // Locks to read how many jobs are in the ring buffer
         let (num_jobs, cvar) = &self.num_jobs;
         let mut num_jobs = num_jobs.lock().unwrap();
@@ -120,12 +120,12 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
 
     /// Poisons the RingBuffer, preventing any more items from being **enqueued**.
     ///
-    /// Time Complexity: O(N) if not blocked (arbitrary time if it is),
-    /// 
+    /// Time Complexity: O(N) if not blocked (arbitrary time if it is)
+    ///
     /// Space complexity: O(1)
-    pub async fn poison(&self) {
+    pub fn poison(&self) {
         for _ in 0..CAPACITY {
-            self.enqueue_item(None).await;
+            self.enqueue_item(None);
         }
     }
 
@@ -134,7 +134,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
     /// to be used again and resets it to an empty state.
     ///
     /// Time Complexity: O(1)
-    /// 
+    ///
     /// Space Complexity: O(1)
     pub fn clear_poison(&self) {
         let mut num_jobs = self.num_jobs.0.lock().unwrap();
@@ -147,99 +147,100 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
     }
 
     /// Clears the MultiThreadedRingBuffer back to an empty state.
-    /// 
+    ///
     /// To clear the RingBuffer *only* when it is *poisoned*, see [Self::clear_poison].
     ///
     /// Time Complexity: O(1)
-    /// 
+    ///
     /// Space Complexity: O(1)
-    pub async fn clear(&self) {
+    pub fn clear(&self) {
         let mut num_jobs = self.num_jobs.0.lock().unwrap();
         *num_jobs = 0;
         *self.inner_rb.lock().unwrap() = InnerRingBuffer::new();
     }
 
     /// Checks whether the MultiThreadedRingBuffer is empty or not
-    /// 
+    ///
     /// Time Complexity: O(1)
-    /// 
+    ///
     /// Space Complexity: O(1)
-    pub async fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         return *self.num_jobs.0.lock().unwrap() == 0;
     }
 
     /// Checks whether the MultiThreadedRingBuffer is full or not
-    /// 
+    ///
     /// Time Complexity: O(1)
-    /// 
+    ///
     /// Space Complexity: O(1)
-    pub async fn is_full(&self) -> bool {
+    pub fn is_full(&self) -> bool {
         return *self.num_jobs.0.lock().unwrap() == CAPACITY;
     }
 
-
     /// Checks the next enqueue index within the MultiThreadedRingBuffer
-    /// 
+    ///
     /// Time Complexity: O(1)
-    /// 
+    ///
     /// Space Complexity: O(1)
-    pub async fn next_enqueue_index(&self) -> usize {
+    pub fn next_enqueue_index(&self) -> usize {
         let inner = self.inner_rb.lock().unwrap();
-        return inner.enqueue_index;
+        inner.enqueue_index
     }
 
     /// Checks the next dequeue index within the MultiThreadedRingBuffer
-    /// 
+    ///
     /// Time Complexity: O(1)
-    /// 
+    ///
     /// Space Complexity: O(1)
-    pub async fn next_dequeue_index(&self) -> usize {
+    pub fn next_dequeue_index(&self) -> usize {
         let inner = self.inner_rb.lock().unwrap();
-        return inner.dequeue_index;
+        inner.dequeue_index
     }
 
-
     /// Returns a clone of the item within the MultiThreadedRingBuffer
-    /// 
+    ///
     /// The T object inside the ring buffer *must* implement the Clone trait
-    /// 
+    ///
     /// Time Complexity: O(T_t)
-    /// 
+    ///
     /// Space Complexity: O(T_s)
-    /// 
+    ///
     /// Where O(T_t) and O(T_s) is the time and space complexity required
     /// to clone the internals of the T object itself
-    pub async fn get(&self, index: usize) -> Option<T>
-    where T: Clone
+    pub fn get(&self, index: usize) -> Option<T>
+    where
+        T: Clone,
     {
         let inner = self.inner_rb.lock().unwrap();
-        return inner.items[index].clone();
+        inner.items[index].clone()
     }
 
     /// Returns a clone of the MultiThreadedRingBuffer in its current state
-    /// 
+    ///
     /// The T object inside the ring buffer *must* implement the Clone trait
-    /// 
+    ///
     /// Time Complexity: O(N * O(T_t))
-    /// 
+    ///
     /// Space Complexity: O(N * O(T_s))
-    /// 
+    ///
     /// Where O(T_t) and O(T_s) is the time and space complexity required
     /// to clone the internals of the T object itself
-    pub async fn rb_items(&self) -> [Option<T>; CAPACITY] 
-    where T: Clone
+    pub fn rb_items(&self) -> [Option<T>; CAPACITY]
+    where
+        T: Clone,
     {
-        let inner = self.inner_rb.lock().unwrap();   
-        return inner.items.clone();
+        let inner = self.inner_rb.lock().unwrap();
+        inner.items.clone()
     }
 
     /// Print out the content inside the MultitThreadedRingBuffer
-    /// 
+    ///
     /// Time Complexity: O(N)
-    /// 
+    ///
     /// Space Complexity: O(1)
-    pub async fn print_buffer(&self) 
-    where T: Debug
+    pub fn print_buffer(&self)
+    where
+        T: Debug,
     {
         let inner = self.inner_rb.lock().unwrap();
         print!("[");
@@ -266,11 +267,11 @@ impl<T, const CAPACITY: usize> Default for ConstMultiThreadedRingBuffer<T, CAPAC
     }
 }
 
-impl <T: Clone, const CAPACITY: usize> Clone for ConstMultiThreadedRingBuffer<T, CAPACITY> {
+impl<T: Clone, const CAPACITY: usize> Clone for ConstMultiThreadedRingBuffer<T, CAPACITY> {
     fn clone(&self) -> Self {
         Self {
             num_jobs: (Mutex::new(*self.num_jobs.0.lock().unwrap()), Condvar::new()),
-            inner_rb: Mutex::new(self.inner_rb.lock().unwrap().clone())
+            inner_rb: Mutex::new(self.inner_rb.lock().unwrap().clone()),
         }
     }
 }

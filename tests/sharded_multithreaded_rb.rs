@@ -38,6 +38,6 @@ async fn test_counter() {
     while let Some(curr_thread) = threads.pop() {
         items_taken += curr_thread.await.unwrap();
     }
-    
+
     assert_eq!(200, items_taken);
 }

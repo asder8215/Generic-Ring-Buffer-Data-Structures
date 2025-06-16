@@ -115,15 +115,14 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
                     self.shard_jobs[current].1.load(Ordering::Acquire) < self.max_capacity_per_shard
                 }
                 Acquire::Dequeue => self.shard_jobs[current].1.load(Ordering::Acquire) > 0,
-            } && self.shard_jobs[current].0.compare_exchange(
-                    false,
-                    true,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                ).is_ok() {
-                    let next = (current + 1) % self.shards;
-                    cell.store(next, Ordering::Relaxed);
-                    break;
+            } && self.shard_jobs[current]
+                .0
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                let next = (current + 1) % self.shards;
+                cell.store(next, Ordering::Relaxed);
+                break;
             }
 
             current = (current + 1) % self.shards;

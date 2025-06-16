@@ -1,16 +1,17 @@
-use std::sync::Arc;
 use generic_ringbuffers::MultiThreadedRingBuffer;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_counter() {
     const MAX_ITEMS: usize = 100;
     const MAX_THREADS: usize = 5;
-    let mtrb: Arc<MultiThreadedRingBuffer<usize>> = Arc::new(MultiThreadedRingBuffer::new(MAX_ITEMS));
+    let mtrb: Arc<MultiThreadedRingBuffer<usize>> =
+        Arc::new(MultiThreadedRingBuffer::new(MAX_ITEMS));
     let mut threads = Vec::with_capacity(MAX_THREADS.try_into().unwrap());
 
     for _ in 0..MAX_THREADS {
         let mtrb = Arc::clone(&mtrb);
-        let handler: tokio::task::JoinHandle<usize> = tokio::spawn(async move { 
+        let handler: tokio::task::JoinHandle<usize> = tokio::spawn(async move {
             let mut counter: usize = 0;
             loop {
                 let item: Option<usize> = mtrb.dequeue().await;
@@ -25,7 +26,7 @@ async fn test_counter() {
         threads.push(handler);
     }
 
-    for _ in 0..2*MAX_ITEMS {
+    for _ in 0..2 * MAX_ITEMS {
         println!("Enqueued item!");
         mtrb.enqueue(20).await;
     }
