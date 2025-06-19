@@ -37,9 +37,6 @@ pub struct ShardedMultiThreadedRingBuffer<T> {
     // global lock used for printing or cloning parts
     // of the data structure
     global_lock: Arc<RwLock<()>>,
-    // Each thread owns a local variable of the index it's looking
-    // at within shard_jobs
-    // shard_ind: ThreadLocal<AtomicUsize>,
     // Used to determine which shard a thread should work on:
     // An atomic bool denoting if the shard is taken or not
     // An atomic usize val denoting if job is at capacity or not
@@ -160,6 +157,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
                         let shard_empty = self.is_shard_empty(current);
 
                         if poisoned && empty {
+                            self.shard_jobs[current].0.store(false, Ordering::Release);
                             return None;
                         }
 
@@ -240,12 +238,6 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
         // read lock for access into reading the ShardedMultithreadedRingBuffer structure
         let _read_guard = self.global_lock.read().await;
 
-        // Checks the poison status of the buffer and will return *only*
-        // if the threads are finished with dequeuing/enqueuing
-        if self.poisoned.load(Ordering::Acquire) && self.num_jobs.load(Ordering::Acquire) == 0 {
-            return None;
-        }
-
         // Locks to read how many jobs are in the ring buffer
         let current = match self.acquire_shard(Acquire::Dequeue).await {
             Some(cur) => cur,
@@ -285,7 +277,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     /// Time Complexity: O(1)
     ///
     /// Space Complexity: O(1)
-    pub async fn clear_poison(&mut self) {
+    pub async fn clear_poison(&self) {
         let _g_write = self.global_lock.write().await;
         if self.poisoned.load(Ordering::Acquire) {
             self.poisoned.store(false, Ordering::Release);
@@ -469,7 +461,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     /// Time Complexity: O(N)
     ///
     /// Space Complexity: O(1)
-    pub async fn print_buffer_at_shard(&self)
+    pub async fn print_buffer(&self)
     where
         T: Debug,
     {
