@@ -5,12 +5,13 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
+    time::Duration,
 };
-use thread_local::ThreadLocal;
+// use thread_local::ThreadLocal;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::sync::{Mutex, RwLock};
-use tokio::task::yield_now;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Acquire {
     Enqueue,
     Dequeue,
@@ -21,6 +22,10 @@ pub enum EnqStatus {
     Poisoned,
     Success,
 }
+
+// task_local! {
+//     static SHARD_INDEX: std::cell::Cell<usize>;
+// }
 
 /// A sharded ring (circular) buffer struct that can only be used in a *multi-threaded environment*,
 /// using a [BoxedSlice] of InnerRingBuffers under the hood.
@@ -36,7 +41,7 @@ pub struct ShardedMultiThreadedRingBuffer<T> {
     global_lock: Arc<RwLock<()>>,
     // Each thread owns a local variable of the index it's looking
     // at within shard_jobs
-    shard_ind: ThreadLocal<AtomicUsize>,
+    // shard_ind: ThreadLocal<AtomicUsize>,
     // Used to determine which shard a thread should work on:
     // An atomic bool denoting if the shard is taken or not
     // An atomic usize val denoting if job is at capacity or not
@@ -56,7 +61,7 @@ struct InnerRingBuffer<T> {
 }
 
 /// Implements the InnerRingBuffer functions
-impl<T: Debug> InnerRingBuffer<T> {
+impl<T> InnerRingBuffer<T> {
     /// Instantiates the InnerRingBuffer
     fn new(capacity: usize) -> Self {
         InnerRingBuffer {
@@ -91,7 +96,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
             max_capacity_per_shard: cmp::max((capacity + shards - 1) / shards, 1),
             num_jobs: AtomicUsize::new(0),
             global_lock: Arc::new(RwLock::default()),
-            shard_ind: ThreadLocal::new(),
+            // shard_ind: ThreadLocal::new(),
             shard_jobs: {
                 let mut vec = Vec::with_capacity(shards);
                 for _i in 0..shards {
@@ -115,9 +120,9 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
 
     /// Helper function for a thread to acquire a specific shard within
     /// self.shard_jobs for enqueuing or dequeuing purposes. It iterates
-    /// in a ring buffer like manner to give each shard equal weight. tokio
-    /// yield_now() function is used so that this function isn't fully occupying
-    /// the CPU at all times.
+    /// in a ring buffer like manner to give each shard equal weight. Yielding
+    /// is done through exponential backoff (capped at 20 ms) so that this function
+    /// isn't fully occupying the CPU at all times.
     ///
     /// The time complexity of this depends on number of enquerer and
     /// dequerer threads there are; ideally, you would have similar number
@@ -125,39 +130,55 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     ///
     /// Space Complexity: O(1)
     async fn acquire_shard(&self, acquire: Acquire) -> Option<usize> {
-        let cell = self.shard_ind.get_or(|| AtomicUsize::new(0));
-        let mut current = cell.load(Ordering::Relaxed);
+        // Threads start off with a random shard_ind value before going
+        // around a circle in the ring buffer (will likely change this to thread local)
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut current = rng.random_range(0..self.shards);
+        let mut spins = 0;
+        let mut attempt: i32 = 0;
 
         loop {
-            // Checks the poison status of the buffer first and will return *only*
-            // if the threads are finished with dequeuing/enqueuing
-            if match acquire {
-                Acquire::Enqueue => {
-                    // if self.poisoned.load(Ordering::Acquire) && self.num_jobs.load(Ordering::Acquire) == self.capacity {
-                    //     return None;
-                    // }
-                    self.shard_jobs[current].1.load(Ordering::Acquire) < self.max_capacity_per_shard
-                }
-                Acquire::Dequeue => {
-                    if self.poisoned.load(Ordering::Acquire)
-                        && self.num_jobs.load(Ordering::Acquire) == 0
-                    {
-                        return None;
-                    }
-                    self.shard_jobs[current].1.load(Ordering::Acquire) > 0
-                }
-            } && self.shard_jobs[current]
+            // println!("Max capacity per shard is {}");
+            if self.shard_jobs[current]
                 .0
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok()
             {
-                let next = (current + 1) % self.shards;
-                cell.store(next, Ordering::Relaxed);
-                break;
+                if match acquire {
+                    Acquire::Enqueue => {
+                        let shard_full = self.is_shard_full(current);
+                        !shard_full
+                    }
+                    Acquire::Dequeue => {
+                        let poisoned = self.poisoned.load(Ordering::Acquire);
+                        let empty = self.is_empty();
+                        let shard_empty = self.is_shard_empty(current);
+
+                        if poisoned && empty {
+                            return None;
+                        }
+
+                        !shard_empty
+                    }
+                } {
+                    break;
+                } else {
+                    self.shard_jobs[current].0.store(false, Ordering::Release);
+                }
             }
 
             current = (current + 1) % self.shards;
-            yield_now().await;
+
+            spins += 1;
+            // yield only once the enquerer or dequerer thread has went one round through
+            // the shard_job buffer
+            if spins % self.shards == 0 {
+                // yielding is done through exponential backoff (capped at 20 ms)
+                // let capped_attempt = attempt.min(5);
+                let backoff_ms = (1u64 << attempt.min(5)).min(20); // max wait of 20ms
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                attempt = attempt.saturating_add(1); // Avoid overflow
+            }
         }
         Some(current)
     }
@@ -184,8 +205,10 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
 
         // Update the num jobs there are in total, the number of jobs inside
         // each shard, and release the occupation status of this shard atomically
-        self.num_jobs.fetch_add(1, Ordering::Release);
-        self.shard_jobs[current].1.fetch_add(1, Ordering::Release);
+        // AcqRel ordering is used because the val of the num_jobs is acquired, updated,
+        // and released at once
+        self.num_jobs.fetch_add(1, Ordering::AcqRel);
+        self.shard_jobs[current].1.fetch_add(1, Ordering::AcqRel);
         self.shard_jobs[current].0.store(false, Ordering::Release);
 
         return EnqStatus::Success;
@@ -198,12 +221,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     pub async fn enqueue(&self, item: T) -> EnqStatus {
         // read lock for access into reading the ShardedMultithreadedRingBuffer structure
         let _read_guard = self.global_lock.read().await;
-
-        // if !self.poisoned.load(Ordering::Acquire) {
         return self.enqueue_item(Some(item)).await;
-        // } else {
-        //     return EnqStatus::Poisoned;
-        // }
     }
 
     /// Retrieves an item of type T from the RingBuffer if an item exists in the buffer.
@@ -235,8 +253,10 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
 
         // Update the num jobs there are in total, the number of jobs inside
         // each shard, and release the occupation status of this shard atomically
-        self.num_jobs.fetch_sub(1, Ordering::Release);
-        self.shard_jobs[current].1.fetch_sub(1, Ordering::Release);
+        // AcqRel ordering is used because the val of the num_jobs is acquired, updated,
+        // and released at once
+        self.num_jobs.fetch_sub(1, Ordering::AcqRel);
+        self.shard_jobs[current].1.fetch_sub(1, Ordering::AcqRel);
         self.shard_jobs[current].0.store(false, Ordering::Release);
 
         item
@@ -248,6 +268,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     ///
     /// Space Complexity: O(1)
     pub async fn poison(&self) {
+        let _g_write = self.global_lock.write().await;
         self.poisoned.store(true, Ordering::Release);
     }
 
@@ -258,6 +279,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     ///
     /// Space Complexity: O(1)
     pub async fn clear_poison(&mut self) {
+        let _g_write = self.global_lock.write().await;
         if self.poisoned.load(Ordering::Acquire) {
             self.poisoned.store(false, Ordering::Release);
         } else {
@@ -290,8 +312,12 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     /// Time Complexity: O(1)
     ///
     /// Space Complexity: O(1)
-    pub async fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         return self.num_jobs.load(Ordering::Acquire) == 0;
+    }
+
+    pub fn is_shard_empty(&self, shard_ind: usize) -> bool {
+        return self.shard_jobs[shard_ind].1.load(Ordering::Acquire) == 0;
     }
 
     /// Checks whether the ShardedMultiThreadedRingBuffer is full or not
@@ -299,8 +325,12 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     /// Time Complexity: O(1)
     ///
     /// Space Complexity: O(1)
-    pub async fn is_full(&self) -> bool {
+    pub fn is_full(&self) -> bool {
         return self.num_jobs.load(Ordering::Acquire) == self.capacity;
+    }
+
+    pub fn is_shard_full(&self, shard_ind: usize) -> bool {
+        return self.shard_jobs[shard_ind].1.load(Ordering::Acquire) == self.max_capacity_per_shard;
     }
 
     /// Checks the next enqueue index within the ShardedMultiThreadedRingBuffer
