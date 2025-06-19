@@ -118,7 +118,7 @@ impl<T, const CAPACITY: usize> ConstMultiThreadedRingBuffer<T, CAPACITY> {
         item
     }
 
-    /// Poisons the RingBuffer, preventing any more items from being **enqueued**.
+    /// Poisons the RingBuffer, preventing any more items from being **dequeued**.
     ///
     /// Time Complexity: O(N) if not blocked (arbitrary time if it is)
     ///

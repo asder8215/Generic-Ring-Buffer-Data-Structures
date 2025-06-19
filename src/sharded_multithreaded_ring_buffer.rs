@@ -261,7 +261,7 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
         item
     }
 
-    /// Poisons the RingBuffer, preventing any more items from being **enqueued**.
+    /// Poisons the RingBuffer, preventing any more items from being **dequeued**.
     ///
     /// Time Complexity: O(1)
     ///
