@@ -21,7 +21,7 @@ struct InnerRingBuffer<T> {
 }
 
 /// Implements the InnerRingBuffer functions
-impl<T: Debug> InnerRingBuffer<T> {
+impl<T> InnerRingBuffer<T> {
     /// Instantiates the InnerRingBuffer
     fn new(capacity: usize) -> Self {
         InnerRingBuffer {
