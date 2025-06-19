@@ -1,7 +1,9 @@
 mod const_multithreaded_ring_buffer;
 mod multithreaded_ring_buffer;
 mod sharded_multithreaded_ring_buffer;
+mod lock_free_sharded_multithreaded_ring_buffer;
 
 pub use const_multithreaded_ring_buffer::ConstMultiThreadedRingBuffer;
 pub use multithreaded_ring_buffer::MultiThreadedRingBuffer;
 pub use sharded_multithreaded_ring_buffer::ShardedMultiThreadedRingBuffer;
+pub use lock_free_sharded_multithreaded_ring_buffer::LFShardedMultiThreadedRingBuffer;
