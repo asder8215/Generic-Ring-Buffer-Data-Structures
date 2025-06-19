@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::sync::Barrier as AsyncBarrier;
 
-const MAX_SHARDS: usize = 1000;
+const MAX_SHARDS: usize = 100;
 const MAX_THREADS: usize = 8;
 const CAPACITY: usize = 1000;
 
@@ -190,25 +190,26 @@ fn rb_benchmark(c: &mut Criterion) {
         .build()
         .unwrap();
 
-    c.bench_with_input(
-        BenchmarkId::new("const_buffer", CAPACITY),
-        &CAPACITY,
-        |b, &_s| {
-            // Insert a call to `to_async` to convert the bencher to async mode.
-            // The timing loops are the same as with the normal bencher.
-            b.iter_custom(move |iters| {
-                let mut total = Duration::ZERO;
-                for _i in 0..iters {
-                    let start = Instant::now();
-                    benchmark_const_buffer::<CAPACITY>();
-                    let end = Instant::now();
-                    total += end - start;
-                }
+    // The const ring buffer allocates on the stack, so it can't handle 100000 or more
+    // c.bench_with_input(
+    //     BenchmarkId::new("const_buffer", CAPACITY),
+    //     &CAPACITY,
+    //     |b, &_s| {
+    //         // Insert a call to `to_async` to convert the bencher to async mode.
+    //         // The timing loops are the same as with the normal bencher.
+    //         b.iter_custom(move |iters| {
+    //             let mut total = Duration::ZERO;
+    //             for _i in 0..iters {
+    //                 let start = Instant::now();
+    //                 benchmark_const_buffer::<CAPACITY>();
+    //                 let end = Instant::now();
+    //                 total += end - start;
+    //             }
 
-                total
-            });
-        },
-    );
+    //             total
+    //         });
+    //     },
+    // );
 
     c.bench_with_input(
         BenchmarkId::new("regular_buffer", CAPACITY),
