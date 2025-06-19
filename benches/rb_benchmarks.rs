@@ -231,26 +231,6 @@ fn rb_benchmark(c: &mut Criterion) {
     );
 
     c.bench_with_input(
-        BenchmarkId::new("regular_buffer", CAPACITY),
-        &CAPACITY,
-        |b, &s| {
-            // Insert a call to `to_async` to convert the bencher to async mode.
-            // The timing loops are the same as with the normal bencher.
-            b.to_async(&runtime).iter_custom(|iters| async move {
-                let mut total = Duration::ZERO;
-                for _i in 0..iters {
-                    let start = Instant::now();
-                    benchmark_regular_buffer(s).await;
-                    let end = Instant::now();
-                    total += end - start;
-                }
-
-                total
-            });
-        },
-    );
-
-    c.bench_with_input(
         BenchmarkId::new("sharded_buffer", CAPACITY),
         &CAPACITY,
         |b, &s| {

@@ -1,11 +1,8 @@
 use std::{
-    cmp,
-    fmt::Debug,
-    sync::{
+    cell::{Cell, RefCell}, cmp, fmt::Debug, sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
-    },
-    time::Duration,
+    }, time::Duration, usize
 };
 // use thread_local::ThreadLocal;
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -23,9 +20,11 @@ pub enum EnqStatus {
     Success,
 }
 
-// task_local! {
-//     static SHARD_INDEX: std::cell::Cell<usize>;
-// }
+// Each thread will own its own shard index and utilize cache 
+// effectively to find an unoccupied shard 
+thread_local! {
+    static SHARD_INDEX: std::cell::RefCell<Option<usize>> = RefCell::new(None);
+}
 
 /// A sharded ring (circular) buffer struct that can only be used in a *multi-threaded environment*,
 /// using a [BoxedSlice] of InnerRingBuffers under the hood.
@@ -132,13 +131,20 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
     async fn acquire_shard(&self, acquire: Acquire) -> Option<usize> {
         // Threads start off with a random shard_ind value before going
         // around a circle in the ring buffer (will likely change this to thread local)
-        let mut rng = StdRng::seed_from_u64(42);
-        let mut current = rng.random_range(0..self.shards);
+        let mut current = SHARD_INDEX.with(|cell| {
+            let mut cell_val = cell.borrow_mut();
+            let current = match *cell_val {
+                Some(val) => (val + 1) % self.shards, // look at the next shard
+                None => rand::rng().random_range(0..self.shards), // init rand shard for thread to look at
+            };
+            *cell_val = Some(current);
+            current
+        });
+
         let mut spins = 0;
         let mut attempt: i32 = 0;
 
         loop {
-            // println!("Max capacity per shard is {}");
             if self.shard_jobs[current]
                 .0
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -173,10 +179,12 @@ impl<T: Debug> ShardedMultiThreadedRingBuffer<T> {
             // yield only once the enquerer or dequerer thread has went one round through
             // the shard_job buffer
             if spins % self.shards == 0 {
-                // yielding is done through exponential backoff (capped at 20 ms)
-                // let capped_attempt = attempt.min(5);
-                let backoff_ms = (1u64 << attempt.min(5)).min(20); // max wait of 20ms
-                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                // yielding is done through exponential backoff + random jitter
+                // max wait of 20ms; jitter allows the threads to wake up at
+                // different ms timings
+                let backoff_ms = (1u64 << attempt.min(5)).min(20);
+                let jitter = rand::rng().random_range(0..=backoff_ms);
+                tokio::time::sleep(Duration::from_millis(jitter)).await;
                 attempt = attempt.saturating_add(1); // Avoid overflow
             }
         }
