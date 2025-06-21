@@ -1,10 +1,15 @@
+use rand::Rng;
 use std::{
-    cell::{RefCell}, cmp, fmt::Debug, sync::{
+    cell::RefCell,
+    cmp,
+    fmt::Debug,
+    sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
-    }, time::Duration, usize
+    },
+    time::Duration,
+    usize,
 };
-use rand::{Rng};
 use tokio::sync::{Mutex, RwLock};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -19,8 +24,8 @@ pub enum EnqStatus {
     Success,
 }
 
-// Each thread will own its own shard index and utilize cache 
-// effectively to find an unoccupied shard 
+// Each thread will own its own shard index and utilize cache
+// effectively to find an unoccupied shard
 thread_local! {
     static SHARD_INDEX: std::cell::RefCell<Option<usize>> = RefCell::new(None);
 }
