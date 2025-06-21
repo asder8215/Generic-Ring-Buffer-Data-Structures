@@ -9,12 +9,12 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Barrier as AsyncBarrier;
-// use ringbuf::{traits::{Consumer, Producer}, SharedRb};
+use ringbuf::{traits::{Consumer, Producer}, SharedRb};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 const MAX_SHARDS: usize = 100;
 const MAX_THREADS: usize = 8;
-const CAPACITY: usize = 100000;
+const CAPACITY: usize = 1000000;
 
 fn benchmark_const_buffer<const C: usize>() {
     let cmtrb: Arc<ConstMultiThreadedRingBuffer<usize, C>> =
@@ -286,6 +286,59 @@ fn benchmark_ringbuffer(capacity: usize) {
     }
 }
 
+fn benchmark_ringbuf(capacity: usize) {
+    // let cmtrb = Arc::new(Mutex::new(SharedRb::new(capacity)));
+    let cmtrb = Arc::new(Mutex::new(SharedRb::new(capacity)));
+
+    // barrier used to make sure all threads are operating at the same time
+    let barrier = Arc::new(Barrier::new(MAX_THREADS * 2));
+
+    let mut deq_threads = Vec::with_capacity(MAX_THREADS);
+    let mut enq_threads = Vec::with_capacity(MAX_THREADS);
+
+    // spawn deq threads
+    for _ in 0..MAX_THREADS {
+        let cmtrb = Arc::clone(&cmtrb);
+        let barrier = Arc::clone(&barrier);
+        let handler: thread::JoinHandle<usize> = thread::spawn(move || {
+            barrier.wait();
+            let mut counter: usize = 0;
+            for _i in 0..capacity {
+                let item: Option<usize> = cmtrb.lock().unwrap().try_pop();
+                match item {
+                    Some(_) => counter += 1,
+                    None => break,
+                }
+            }
+            counter
+        });
+        deq_threads.push(handler);
+    }
+
+    // spawn enq threads
+    for _ in 0..MAX_THREADS {
+        let cmtrb = Arc::clone(&cmtrb);
+        let barrier = Arc::clone(&barrier);
+        let handler: thread::JoinHandle<()> = thread::spawn(move || {
+            barrier.wait();
+            for _i in 0..capacity {
+                let _ = cmtrb.lock().unwrap().try_push(20);
+            }
+        });
+        enq_threads.push(handler);
+    }
+
+    // Wait for enqueuers
+    for enq in enq_threads {
+        enq.join().unwrap();
+    }
+
+    // Wait for dequerers
+    for deq in deq_threads {
+        deq.join().unwrap();
+    }
+}
+
 // Benchmark regular ring buffer and sharded ring buffer code here!
 // Uses tokio runtime to test async code
 // Sources where I learned about cargo benchmarking:
@@ -321,45 +374,65 @@ fn rb_benchmark(c: &mut Criterion) {
     //     },
     // );
 
-    // c.bench_with_input(
-    //     BenchmarkId::new("regular_buffer", CAPACITY),
-    //     &CAPACITY,
-    //     |b, &s| {
-    //         // Insert a call to `to_async` to convert the bencher to async mode.
-    //         // The timing loops are the same as with the normal bencher.
-    //         b.to_async(&runtime).iter_custom(|iters| async move {
-    //             let mut total = Duration::ZERO;
-    //             for _i in 0..iters {
-    //                 let start = Instant::now();
-    //                 benchmark_regular_buffer(s).await;
-    //                 let end = Instant::now();
-    //                 total += end - start;
-    //             }
+    c.bench_with_input(
+        BenchmarkId::new("regular_buffer", CAPACITY),
+        &CAPACITY,
+        |b, &s| {
+            // Insert a call to `to_async` to convert the bencher to async mode.
+            // The timing loops are the same as with the normal bencher.
+            b.to_async(&runtime).iter_custom(|iters| async move {
+                let mut total = Duration::ZERO;
+                for _i in 0..iters {
+                    let start = Instant::now();
+                    benchmark_regular_buffer(s).await;
+                    let end = Instant::now();
+                    total += end - start;
+                }
 
-    //             total
-    //         });
-    //     },
-    // );
+                total
+            });
+        },
+    );
 
-    // c.bench_with_input(
-    //     BenchmarkId::new("sharded_buffer", CAPACITY),
-    //     &CAPACITY,
-    //     |b, &s| {
-    //         // Insert a call to `to_async` to convert the bencher to async mode.
-    //         // The timing loops are the same as with the normal bencher.
-    //         b.to_async(&runtime).iter_custom(|iters| async move {
-    //             let mut total = Duration::ZERO;
-    //             for _i in 0..iters {
-    //                 let start = Instant::now();
-    //                 benchmark_sharded_buffer(s).await;
-    //                 let end = Instant::now();
-    //                 total += end - start;
-    //             }
+    c.bench_with_input(
+        BenchmarkId::new("sharded_buffer", CAPACITY),
+        &CAPACITY,
+        |b, &s| {
+            // Insert a call to `to_async` to convert the bencher to async mode.
+            // The timing loops are the same as with the normal bencher.
+            b.to_async(&runtime).iter_custom(|iters| async move {
+                let mut total = Duration::ZERO;
+                for _i in 0..iters {
+                    let start = Instant::now();
+                    benchmark_sharded_buffer(s).await;
+                    let end = Instant::now();
+                    total += end - start;
+                }
 
-    //             total
-    //         });
-    //     },
-    // );
+                total
+            });
+        },
+    );
+
+        c.bench_with_input(
+        BenchmarkId::new("lock_free_sharded_buffer", CAPACITY),
+        &CAPACITY,
+        |b, &s| {
+            // Insert a call to `to_async` to convert the bencher to async mode.
+            // The timing loops are the same as with the normal bencher.
+            b.to_async(&runtime).iter_custom(|iters| async move {
+                let mut total = Duration::ZERO;
+                for _i in 0..iters {
+                    let start = Instant::now();
+                    benchmark_lock_free_sharded_buffer(s).await;
+                    let end = Instant::now();
+                    total += end - start;
+                }
+
+                total
+            });
+        },
+    );
 
     // The const ring buffer allocates on the stack, so it can't handle 100000 or more
     c.bench_with_input(
@@ -383,16 +456,16 @@ fn rb_benchmark(c: &mut Criterion) {
     );
 
     c.bench_with_input(
-        BenchmarkId::new("lock_free_sharded_buffer", CAPACITY),
+        BenchmarkId::new("shared_ring_buffer", CAPACITY),
         &CAPACITY,
         |b, &s| {
             // Insert a call to `to_async` to convert the bencher to async mode.
             // The timing loops are the same as with the normal bencher.
-            b.to_async(&runtime).iter_custom(|iters| async move {
+            b.iter_custom(move |iters| {
                 let mut total = Duration::ZERO;
                 for _i in 0..iters {
                     let start = Instant::now();
-                    benchmark_lock_free_sharded_buffer(s).await;
+                    benchmark_ringbuf(s);
                     let end = Instant::now();
                     total += end - start;
                 }
