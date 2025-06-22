@@ -30,10 +30,10 @@ pub struct LFShardedMultiThreadedRingBuffer<T> {
     shards: usize,
     max_capacity_per_shard: usize,
     // Used to determine which shard a thread should work on
-    // CachePadded using to prevent false sharing
+    // CachePadded to prevent false sharing
     shard_jobs: Box<[CachePadded<ShardJob>]>,
     // Multiple InnerRingBuffer structure based on num of shards
-    // CachePadded using to prevent false sharing
+    // CachePadded to prevent false sharing
     inner_rb: Box<[CachePadded<InnerRingBuffer<T>>]>,
 }
 
