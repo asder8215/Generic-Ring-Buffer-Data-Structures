@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+crossbeam = "0.8.4"
+crossbeam-utils = "0.8.21"
 fastrand = "2.3.0"
 rand = "0.9.1"
 ringbuf = "0.4.8"

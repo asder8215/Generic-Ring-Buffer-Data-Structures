@@ -1,3 +1,4 @@
+use crossbeam_utils::CachePadded;
 use fastrand::usize as frand;
 use std::{
     cell::{Cell, RefCell, UnsafeCell},
@@ -29,16 +30,14 @@ pub struct LFShardedMultiThreadedRingBuffer<T> {
     shards: usize,
     max_capacity_per_shard: usize,
     // Used to determine which shard a thread should work on
-    shard_jobs: Box<[ShardJob]>,
+    // CachePadded using to prevent false sharing
+    shard_jobs: Box<[CachePadded<ShardJob>]>,
     // Multiple InnerRingBuffer structure based on num of shards
-    inner_rb: Box<[InnerRingBuffer<T>]>,
+    // CachePadded using to prevent false sharing
+    inner_rb: Box<[CachePadded<InnerRingBuffer<T>>]>,
 }
 
 #[derive(Debug)]
-// align the struct to a 64 byte cache line
-// to prevent cache line bouncing between
-// processor cores
-#[repr(align(64))]
 struct ShardJob {
     occupied: AtomicBool,   // occupied status of shard
     job_count: Cell<usize>, // how many jobs are in shard
@@ -98,17 +97,17 @@ impl<T: Debug> LFShardedMultiThreadedRingBuffer<T> {
             shard_jobs: {
                 let mut vec = Vec::with_capacity(shards);
                 for _i in 0..shards {
-                    vec.push(ShardJob::new());
+                    vec.push(CachePadded::new(ShardJob::new()));
                 }
                 vec.into_boxed_slice()
             },
             inner_rb: {
                 let mut vec = Vec::with_capacity(shards);
                 for _i in 0..shards {
-                    vec.push(InnerRingBuffer::new(cmp::max(
+                    vec.push(CachePadded::new(InnerRingBuffer::new(cmp::max(
                         (capacity + shards - 1) / shards,
                         1,
-                    )));
+                    ))));
                 }
                 vec.into_boxed_slice()
             },

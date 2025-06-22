@@ -45,7 +45,7 @@ async fn test_counter() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 16)]
 async fn benchmark_sharded_buffer() {
-    let max_items: usize = 100;
+    let max_items: usize = 1000000;
     const MAX_SHARDS: usize = 10;
     const MAX_THREADS: usize = 8;
 
